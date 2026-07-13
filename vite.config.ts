@@ -5,54 +5,12 @@
 //     React/TanStack dedupe, error logger plugins, and sandbox detection (port/host/strictPort).
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
-import { VitePWA } from "vite-plugin-pwa";
 
+// Service worker is hand-written at public/sw.js so Vercel serves it reliably
+// at /sw.js. vite-plugin-pwa was removed because Nitro on Vercel did not always
+// emit its generated sw.js into the static assets folder → 404 in production.
 export default defineConfig({
   tanstackStart: {
     server: { entry: "server" },
-  },
-  vite: {
-    plugins: [
-      VitePWA({
-        registerType: "autoUpdate",
-        injectRegister: null,
-        filename: "sw.js",
-        devOptions: { enabled: false },
-        manifest: false,
-        workbox: {
-          globPatterns: ["**/*.{js,css,html,ico,png,svg,webp,woff2}"],
-          navigateFallback: "/",
-          navigateFallbackDenylist: [/^\/~oauth/, /^\/api\//],
-          runtimeCaching: [
-            {
-              urlPattern: ({ request }) => request.mode === "navigate",
-              handler: "NetworkFirst",
-              options: {
-                cacheName: "html-pages",
-                networkTimeoutSeconds: 3,
-              },
-            },
-            {
-              urlPattern: ({ url, sameOrigin }) =>
-                sameOrigin && /\.(?:js|css|woff2)$/.test(url.pathname),
-              handler: "CacheFirst",
-              options: {
-                cacheName: "static-assets",
-                expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 30 },
-              },
-            },
-            {
-              urlPattern: ({ url, sameOrigin }) =>
-                sameOrigin && /\.(?:png|jpg|jpeg|svg|webp|ico)$/.test(url.pathname),
-              handler: "CacheFirst",
-              options: {
-                cacheName: "images",
-                expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 30 },
-              },
-            },
-          ],
-        },
-      }),
-    ],
   },
 });

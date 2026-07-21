@@ -82,3 +82,8 @@ export function useTransactions() {
 export function getTransactionsSnapshot(): Transaction[] {
   return state;
 }
+
+/** Force a reload of the transactions store (used after batch changes). */
+export async function reloadTransactions() {
+  await load();
+}

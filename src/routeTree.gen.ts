@@ -14,7 +14,6 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppReportRouteImport } from './routes/_app.report'
-import { Route as AppRecapRouteImport } from './routes/_app.recap'
 import { Route as AppHistoryRouteImport } from './routes/_app.history'
 
 const LockRoute = LockRouteImport.update({
@@ -41,11 +40,6 @@ const AppReportRoute = AppReportRouteImport.update({
   path: '/report',
   getParentRoute: () => AppRoute,
 } as any)
-const AppRecapRoute = AppRecapRouteImport.update({
-  id: '/recap',
-  path: '/recap',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppHistoryRoute = AppHistoryRouteImport.update({
   id: '/history',
   path: '/history',
@@ -56,14 +50,12 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/lock': typeof LockRoute
   '/history': typeof AppHistoryRoute
-  '/recap': typeof AppRecapRoute
   '/report': typeof AppReportRoute
   '/settings': typeof AppSettingsRoute
 }
 export interface FileRoutesByTo {
   '/lock': typeof LockRoute
   '/history': typeof AppHistoryRoute
-  '/recap': typeof AppRecapRoute
   '/report': typeof AppReportRoute
   '/settings': typeof AppSettingsRoute
   '/': typeof AppIndexRoute
@@ -73,22 +65,20 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/lock': typeof LockRoute
   '/_app/history': typeof AppHistoryRoute
-  '/_app/recap': typeof AppRecapRoute
   '/_app/report': typeof AppReportRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/lock' | '/history' | '/recap' | '/report' | '/settings'
+  fullPaths: '/' | '/lock' | '/history' | '/report' | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/lock' | '/history' | '/recap' | '/report' | '/settings' | '/'
+  to: '/lock' | '/history' | '/report' | '/settings' | '/'
   id:
     | '__root__'
     | '/_app'
     | '/lock'
     | '/_app/history'
-    | '/_app/recap'
     | '/_app/report'
     | '/_app/settings'
     | '/_app/'
@@ -136,13 +126,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppReportRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/recap': {
-      id: '/_app/recap'
-      path: '/recap'
-      fullPath: '/recap'
-      preLoaderRoute: typeof AppRecapRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/history': {
       id: '/_app/history'
       path: '/history'
@@ -155,7 +138,6 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppHistoryRoute: typeof AppHistoryRoute
-  AppRecapRoute: typeof AppRecapRoute
   AppReportRoute: typeof AppReportRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppIndexRoute: typeof AppIndexRoute
@@ -163,7 +145,6 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppHistoryRoute: AppHistoryRoute,
-  AppRecapRoute: AppRecapRoute,
   AppReportRoute: AppReportRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppIndexRoute: AppIndexRoute,

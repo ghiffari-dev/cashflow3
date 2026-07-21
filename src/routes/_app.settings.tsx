@@ -7,19 +7,24 @@ import {
   FileSpreadsheet,
   FileText,
   Plus,
+  Repeat,
   Target,
   Trash2,
   Upload,
   X,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTransactions } from "@/hooks/use-transactions";
 import { useCategories } from "@/hooks/use-categories";
 import { useBudgets } from "@/hooks/use-budgets";
+import { useRecurring } from "@/hooks/use-recurring";
+import { useTemplates } from "@/hooks/use-templates";
 import { exportCSV, exportJSON, exportPDF, parseCSVFile, parseJSONFile } from "@/lib/backup";
-import { isDefault, type TxKind } from "@/lib/categories";
+import { isDefault, iconFor, type TxKind } from "@/lib/categories";
 import { idr } from "@/lib/format";
 import type { Transaction } from "@/lib/mock-data";
+import type { Frequency, QuickTemplate, RecurringRule } from "@/lib/db";
 
 export const Route = createFileRoute("/_app/settings")({
   component: SettingsPage,
@@ -45,6 +50,8 @@ function SettingsPage() {
 
   return (
     <div className="space-y-8">
+      <TemplatesSection />
+      <RecurringSection />
       <CategoriesSection />
       <BudgetsSection />
 
@@ -470,3 +477,420 @@ function ActionCard({
     </div>
   );
 }
+
+// ---------- Quick-add templates ----------
+function TemplatesSection() {
+  const { all } = useCategories();
+  const { templates, upsert, remove } = useTemplates();
+  const [adding, setAdding] = useState(false);
+  const [label, setLabel] = useState("");
+  const [type, setType] = useState<TxKind>("expense");
+  const [category, setCategory] = useState(all.expense[0]?.name ?? "Makan");
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+
+  const reset = () => {
+    setLabel("");
+    setType("expense");
+    setCategory(all.expense[0]?.name ?? "Makan");
+    setAmount("");
+    setNote("");
+    setAdding(false);
+  };
+
+  const save = async () => {
+    const n = Number(amount.replace(/[^\d]/g, ""));
+    if (!label.trim() || !n) {
+      toast.error("Isi nama template dan nominal");
+      return;
+    }
+    const tpl: QuickTemplate = {
+      id: `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      label: label.trim(),
+      type,
+      amount: n,
+      category,
+      icon: iconFor(type, category),
+      note: note.trim(),
+    };
+    await upsert(tpl);
+    toast.success("Template disimpan");
+    reset();
+  };
+
+  return (
+    <Section
+      title="Catat Cepat"
+      subtitle="Template untuk transaksi yang sering diulang. Muncul sebagai chip di Dashboard — 1 tap langsung tercatat."
+    >
+      <div className="space-y-3 rounded-2xl bg-surface p-4 shadow-sm">
+        {templates.length > 0 && (
+          <div className="space-y-2">
+            {templates.map((t) => (
+              <div
+                key={t.id}
+                className="flex items-center gap-3 rounded-xl border border-border bg-background px-3 py-2.5"
+              >
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-lg">
+                  {t.icon}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium">{t.label}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {t.category} · <span className={t.type === "income" ? "text-income" : "text-expense"}>{t.type === "income" ? "+" : "−"}{idr(t.amount)}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={async () => {
+                    await remove(t.id);
+                    toast.success("Template dihapus");
+                  }}
+                  className="rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-expense"
+                  aria-label="Hapus"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!adding ? (
+          <button
+            onClick={() => setAdding(true)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary hover:text-primary"
+          >
+            <Zap className="h-3.5 w-3.5" />
+            Tambah template
+          </button>
+        ) : (
+          <div className="space-y-3 rounded-xl border border-border bg-background p-3">
+            <div>
+              <label className="text-[11px] text-muted-foreground">Nama template</label>
+              <input
+                autoFocus
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                placeholder="Contoh: Kopi pagi"
+                className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-ring"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-1 rounded-full bg-surface p-1">
+              {(["expense", "income"] as TxKind[]).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => {
+                    setType(t);
+                    setCategory(all[t][0]?.name ?? "Lainnya");
+                  }}
+                  className={`rounded-full py-2 text-xs font-medium transition ${
+                    type === t ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground"
+                  }`}
+                >
+                  {t === "income" ? "Pemasukan" : "Pengeluaran"}
+                </button>
+              ))}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-ring"
+              >
+                {all[type].map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {c.icon} {c.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                inputMode="numeric"
+                value={amount ? Number(amount.replace(/[^\d]/g, "")).toLocaleString("id-ID") : ""}
+                onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))}
+                placeholder="Nominal (Rp)"
+                className="rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-ring"
+              />
+            </div>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Catatan (opsional)"
+              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-ring"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={save}
+                className="flex-1 rounded-lg py-2 text-xs font-semibold text-primary-foreground shadow"
+                style={{ background: "linear-gradient(135deg, var(--brand-from), var(--brand-to))" }}
+              >
+                Simpan
+              </button>
+              <button
+                onClick={reset}
+                className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+// ---------- Recurring ----------
+const DOW = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
+
+function todayISO() {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 10);
+}
+
+function freqLabel(r: RecurringRule): string {
+  if (r.frequency === "daily") return "Setiap hari";
+  if (r.frequency === "weekly") return `Mingguan · ${DOW[r.dayOfPeriod ?? 1]}`;
+  return `Bulanan · tgl ${r.dayOfPeriod ?? 1}`;
+}
+
+function RecurringSection() {
+  const { all } = useCategories();
+  const { rules, upsert, remove, toggle } = useRecurring();
+  const [adding, setAdding] = useState(false);
+  const [type, setType] = useState<TxKind>("expense");
+  const [category, setCategory] = useState(all.expense[0]?.name ?? "Tagihan");
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [frequency, setFrequency] = useState<Frequency>("monthly");
+  const [dayOfPeriod, setDayOfPeriod] = useState<number>(1);
+  const [startDate, setStartDate] = useState(todayISO());
+
+  const reset = () => {
+    setAdding(false);
+    setAmount("");
+    setNote("");
+    setFrequency("monthly");
+    setDayOfPeriod(1);
+    setStartDate(todayISO());
+  };
+
+  const save = async () => {
+    const n = Number(amount.replace(/[^\d]/g, ""));
+    if (!n) {
+      toast.error("Isi nominal");
+      return;
+    }
+    const rule: RecurringRule = {
+      id: `rec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type,
+      amount: n,
+      category,
+      icon: iconFor(type, category),
+      note: note.trim() || category,
+      frequency,
+      dayOfPeriod: frequency === "daily" ? undefined : dayOfPeriod,
+      startDate,
+      lastRun: null,
+      active: true,
+    };
+    await upsert(rule);
+    toast.success("Transaksi berulang disimpan", {
+      description: "Berjalan otomatis saat aplikasi dibuka.",
+    });
+    reset();
+  };
+
+  return (
+    <Section
+      title="Transaksi Berulang"
+      subtitle="Untuk gaji, langganan, cicilan. Otomatis tercatat sesuai jadwal saat kamu membuka aplikasi."
+    >
+      <div className="space-y-3 rounded-2xl bg-surface p-4 shadow-sm">
+        {rules.length > 0 && (
+          <div className="space-y-2">
+            {rules.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center gap-3 rounded-xl border border-border bg-background px-3 py-2.5"
+              >
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-lg">
+                  {r.icon}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium">{r.category}</span>
+                    <span
+                      className={`text-xs font-semibold ${r.type === "income" ? "text-income" : "text-expense"}`}
+                    >
+                      {r.type === "income" ? "+" : "−"}
+                      {idr(r.amount)}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {freqLabel(r)}
+                    {r.lastRun ? ` · terakhir ${r.lastRun}` : " · belum berjalan"}
+                  </div>
+                </div>
+                <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={r.active}
+                    onChange={(e) => void toggle(r.id, e.target.checked)}
+                    className="h-3.5 w-3.5 accent-primary"
+                  />
+                  Aktif
+                </label>
+                <button
+                  onClick={async () => {
+                    if (!confirm(`Hapus jadwal ${r.category}?`)) return;
+                    await remove(r.id);
+                    toast.success("Jadwal dihapus");
+                  }}
+                  className="rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-expense"
+                  aria-label="Hapus"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!adding ? (
+          <button
+            onClick={() => setAdding(true)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary hover:text-primary"
+          >
+            <Repeat className="h-3.5 w-3.5" />
+            Tambah jadwal berulang
+          </button>
+        ) : (
+          <div className="space-y-3 rounded-xl border border-border bg-background p-3">
+            <div className="grid grid-cols-2 gap-1 rounded-full bg-surface p-1">
+              {(["expense", "income"] as TxKind[]).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => {
+                    setType(t);
+                    setCategory(all[t][0]?.name ?? "Lainnya");
+                  }}
+                  className={`rounded-full py-2 text-xs font-medium transition ${
+                    type === t ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground"
+                  }`}
+                >
+                  {t === "income" ? "Pemasukan" : "Pengeluaran"}
+                </button>
+              ))}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-ring"
+              >
+                {all[type].map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {c.icon} {c.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                inputMode="numeric"
+                value={amount ? Number(amount.replace(/[^\d]/g, "")).toLocaleString("id-ID") : ""}
+                onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))}
+                placeholder="Nominal (Rp)"
+                className="rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-ring"
+              />
+            </div>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Catatan (opsional)"
+              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-ring"
+            />
+            <div>
+              <label className="text-[11px] text-muted-foreground">Frekuensi</label>
+              <div className="mt-1 grid grid-cols-3 gap-1 rounded-full bg-surface p-1">
+                {(["daily", "weekly", "monthly"] as Frequency[]).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFrequency(f)}
+                    className={`rounded-full py-2 text-xs font-medium transition ${
+                      frequency === f ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground"
+                    }`}
+                  >
+                    {f === "daily" ? "Harian" : f === "weekly" ? "Mingguan" : "Bulanan"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {frequency === "weekly" && (
+              <div>
+                <label className="text-[11px] text-muted-foreground">Hari</label>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {DOW.map((d, i) => (
+                    <button
+                      key={d}
+                      onClick={() => setDayOfPeriod(i)}
+                      className={`flex h-9 w-9 items-center justify-center rounded-lg text-xs font-medium transition ${
+                        dayOfPeriod === i
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-surface text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {frequency === "monthly" && (
+              <div>
+                <label className="text-[11px] text-muted-foreground">Tanggal (1–28)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={28}
+                  value={dayOfPeriod}
+                  onChange={(e) =>
+                    setDayOfPeriod(Math.min(28, Math.max(1, Number(e.target.value) || 1)))
+                  }
+                  className="mt-1 w-24 rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-ring"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="text-[11px] text-muted-foreground">Mulai dari tanggal</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-ring"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={save}
+                className="flex-1 rounded-lg py-2 text-xs font-semibold text-primary-foreground shadow"
+                style={{ background: "linear-gradient(135deg, var(--brand-from), var(--brand-to))" }}
+              >
+                Simpan jadwal
+              </button>
+              <button
+                onClick={reset}
+                className="rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Section>
+  );
+}
+

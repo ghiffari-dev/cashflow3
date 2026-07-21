@@ -5,6 +5,7 @@ import { useTransactions } from "@/hooks/use-transactions";
 import { MOCK_TXS } from "@/lib/mock-data";
 import { idr, shortDate } from "@/lib/format";
 import { BudgetWidget } from "@/components/budget-widget";
+import { QuickAddStrip } from "@/components/quick-add-strip";
 
 export const Route = createFileRoute("/_app/")({
   component: Dashboard,
@@ -72,6 +73,8 @@ function Dashboard() {
         <StatCard label="Transaksi" value={`${thisMonthCount}`} tone="neutral" />
         <StatCard label="Rata-rata / transaksi" value={idr(avg)} tone="neutral" />
       </section>
+
+      <QuickAddStrip />
 
       <BudgetWidget />
 

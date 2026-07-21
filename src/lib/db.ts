@@ -1,7 +1,36 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
-import type { Transaction } from "./mock-data";
+import type { Transaction, TxType } from "./mock-data";
 
 export type BudgetRecord = { category: string; limit: number };
+
+export type Frequency = "daily" | "weekly" | "monthly";
+
+export type RecurringRule = {
+  id: string;
+  type: TxType;
+  amount: number;
+  category: string;
+  icon: string;
+  note: string;
+  frequency: Frequency;
+  /** For weekly: 0..6 (Sun..Sat). For monthly: 1..28. Unused for daily. */
+  dayOfPeriod?: number;
+  /** ISO date (YYYY-MM-DD) — first day the rule becomes active. */
+  startDate: string;
+  /** ISO date of the last generated occurrence, or null if never. */
+  lastRun: string | null;
+  active: boolean;
+};
+
+export type QuickTemplate = {
+  id: string;
+  label: string;
+  type: TxType;
+  amount: number;
+  category: string;
+  icon: string;
+  note: string;
+};
 
 interface KeuanganDB extends DBSchema {
   transactions: {
@@ -17,10 +46,18 @@ interface KeuanganDB extends DBSchema {
     key: string;
     value: BudgetRecord;
   };
+  recurring: {
+    key: string;
+    value: RecurringRule;
+  };
+  templates: {
+    key: string;
+    value: QuickTemplate;
+  };
 }
 
 const DB_NAME = "keuangan-db";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbp: Promise<IDBPDatabase<KeuanganDB>> | null = null;
 
@@ -38,6 +75,14 @@ export function getDB(): Promise<IDBPDatabase<KeuanganDB>> {
         }
         if (oldVersion < 2 && !db.objectStoreNames.contains("budgets")) {
           db.createObjectStore("budgets", { keyPath: "category" });
+        }
+        if (oldVersion < 3) {
+          if (!db.objectStoreNames.contains("recurring")) {
+            db.createObjectStore("recurring", { keyPath: "id" });
+          }
+          if (!db.objectStoreNames.contains("templates")) {
+            db.createObjectStore("templates", { keyPath: "id" });
+          }
         }
       },
     });
@@ -109,4 +154,32 @@ export async function setBudget(rec: BudgetRecord) {
 export async function deleteBudget(category: string) {
   const db = await getDB();
   await db.delete("budgets", category);
+}
+
+// --- Recurring ---
+export async function listRecurring(): Promise<RecurringRule[]> {
+  const db = await getDB();
+  return db.getAll("recurring");
+}
+export async function putRecurring(rule: RecurringRule) {
+  const db = await getDB();
+  await db.put("recurring", rule);
+}
+export async function deleteRecurring(id: string) {
+  const db = await getDB();
+  await db.delete("recurring", id);
+}
+
+// --- Templates ---
+export async function listTemplates(): Promise<QuickTemplate[]> {
+  const db = await getDB();
+  return db.getAll("templates");
+}
+export async function putTemplate(tpl: QuickTemplate) {
+  const db = await getDB();
+  await db.put("templates", tpl);
+}
+export async function deleteTemplate(id: string) {
+  const db = await getDB();
+  await db.delete("templates", id);
 }

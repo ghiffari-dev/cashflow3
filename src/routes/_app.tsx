@@ -1,11 +1,16 @@
 import { createFileRoute, Link, Navigate, Outlet, useLocation } from "@tanstack/react-router";
-import { Home, History, PieChart, Moon, Sun, Plus, Lock, Wallet, Settings, Sparkles } from "lucide-react";
-import { lazy, Suspense, useState } from "react";
+import { Home, History, PieChart, Moon, Sun, Plus, Lock, Wallet, Settings, ScanLine } from "lucide-react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useApp } from "@/lib/app-state";
-import { useTransactions } from "@/hooks/use-transactions";
+import { useTransactions, reloadTransactions } from "@/hooks/use-transactions";
+import { reloadRecurring } from "@/hooks/use-recurring";
 
 const TxForm = lazy(() =>
   import("@/components/tx-form").then((m) => ({ default: m.TxForm })),
+);
+const ScanReceipt = lazy(() =>
+  import("@/components/scan-receipt").then((m) => ({ default: m.ScanReceipt })),
 );
 
 export const Route = createFileRoute("/_app")({
@@ -17,17 +22,32 @@ const NAV = [
   { to: "/", label: "Dashboard", icon: Home, exact: true },
   { to: "/history", label: "Riwayat", icon: History, exact: false },
   { to: "/report", label: "Laporan", icon: PieChart, exact: false },
-  { to: "/recap", label: "Recap", icon: Sparkles, exact: false },
   { to: "/settings", label: "Pengaturan", icon: Settings, exact: false },
 ] as const;
 
 
 function AppLayout() {
   const { unlocked, hydrated, theme, toggleTheme, setUnlocked } = useApp();
-  const { add } = useTransactions();
+  const { add, loaded: txLoaded } = useTransactions();
   const [formOpen, setFormOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const location = useLocation();
+  const ranRecurring = useRef(false);
 
+  // Auto-generate recurring transactions on unlock (once per session).
+  useEffect(() => {
+    if (!unlocked || !txLoaded || ranRecurring.current) return;
+    ranRecurring.current = true;
+    void (async () => {
+      const { runRecurring } = await import("@/lib/recurring-runner");
+      const created = await runRecurring();
+      if (created > 0) {
+        await reloadTransactions();
+        await reloadRecurring();
+        toast.success(`${created} transaksi berulang dibuat otomatis`);
+      }
+    })();
+  }, [unlocked, txLoaded]);
 
   if (!hydrated) return <div className="min-h-[100dvh] bg-background" />;
   if (!unlocked) return <Navigate to="/lock" />;
@@ -39,11 +59,9 @@ function AppLayout() {
         ? "Riwayat"
         : location.pathname.startsWith("/report")
           ? "Laporan"
-          : location.pathname.startsWith("/recap")
-            ? "Recap"
-            : location.pathname.startsWith("/settings")
-              ? "Pengaturan"
-              : "CashFlow";
+          : location.pathname.startsWith("/settings")
+            ? "Pengaturan"
+            : "CashFlow";
 
 
   return (
@@ -107,6 +125,13 @@ function AppLayout() {
             <h1 className="truncate text-base font-semibold tracking-tight">{currentTitle}</h1>
             <div className="flex items-center gap-1">
               <button
+                onClick={() => setScanOpen(true)}
+                aria-label="Pindai struk"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              >
+                <ScanLine className="h-5 w-5" />
+              </button>
+              <button
                 onClick={toggleTheme}
                 aria-label="Ganti tema"
                 className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground"
@@ -128,17 +153,25 @@ function AppLayout() {
         <div className="hidden lg:block border-b border-border/60 bg-background/60 backdrop-blur">
           <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-8">
             <h1 className="text-xl font-semibold tracking-tight">{currentTitle}</h1>
-            <button
-              className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-primary-foreground shadow transition hover:opacity-90 active:scale-95"
-              style={{
-                background: "linear-gradient(135deg, var(--brand-from), var(--brand-to))",
-              }}
-              onClick={() => setFormOpen(true)}
-
-            >
-              <Plus className="h-4 w-4" />
-              Tambah transaksi
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setScanOpen(true)}
+                className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-4 py-2 text-sm font-medium transition hover:bg-accent"
+              >
+                <ScanLine className="h-4 w-4" />
+                Pindai struk
+              </button>
+              <button
+                className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-primary-foreground shadow transition hover:opacity-90 active:scale-95"
+                style={{
+                  background: "linear-gradient(135deg, var(--brand-from), var(--brand-to))",
+                }}
+                onClick={() => setFormOpen(true)}
+              >
+                <Plus className="h-4 w-4" />
+                Tambah transaksi
+              </button>
+            </div>
           </div>
         </div>
 
@@ -186,6 +219,20 @@ function AppLayout() {
           <TxForm
             open={formOpen}
             onClose={() => setFormOpen(false)}
+            onSubmit={async (tx) => {
+              await add(tx);
+              const { checkBudgetAfterAdd } = await import("@/lib/budget-check");
+              checkBudgetAfterAdd(tx);
+            }}
+          />
+        </Suspense>
+      )}
+
+      {scanOpen && (
+        <Suspense fallback={null}>
+          <ScanReceipt
+            open={scanOpen}
+            onClose={() => setScanOpen(false)}
             onSubmit={async (tx) => {
               await add(tx);
               const { checkBudgetAfterAdd } = await import("@/lib/budget-check");
